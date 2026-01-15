@@ -1,0 +1,6 @@
+# data/preprocess/
+# data/passages.memmap
+# data/train_dpr_ready.jsonl
+data/
+models/
+__pycache__/

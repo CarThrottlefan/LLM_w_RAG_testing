@@ -1,0 +1,8 @@
+python adore/train.py --metric_cut 200 \
+    --init_path ../NLP_proj_LLM_w-RAG/models/models--facebook--dpr-ctx_encoder-multiset-base/snapshots/fdb3d46584386d2f20aa00724ae31cebc348d16b \
+    --pembed_path ../NLP_proj_LLM_w-RAG/data/passages.memmap \
+    --model_save_dir ../NLP_proj_LLM_w-RAG/adore/model \
+    --log_dir ../NLP_proj_LLM_w-RAG/adore/logs \
+    --preprocess_dir ../NLP_proj_LLM_w-RAG/data/preprocess \
+    --model_gpu_index 0 \
+    --faiss_gpu_index 1
