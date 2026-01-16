@@ -8,13 +8,14 @@ from dexter.utils.metrics.SimilarityMatch import DotScore
 from dexter.data.datastructures.hyperparameters.dpr import DenseHyperParams
 from run_rag import LlamaEngine
 
-os.environ["HF_HUB_OFFLINE"] = "1"
-loader = RetrieverDataset("wikimultihopqa",
-                          "wiki-musiqueqa-corpus",
-                          "D:\\NLP_proj_LLM_w-RAG\\config.ini",
-                          Split.TRAIN,
-                          tokenizer=None)
-queries, qrels, corpus = loader.qrels()
+CONFIG_PATH = "D:\\NLP_proj_LLM_w-RAG\\config.ini"
+DATASET = "wikimultihopqa"
+CORPUS_NAME = "wiki-musiqueqa-corpus"
+# load the dataset
+loader = RetrieverDataset(DATASET, CORPUS_NAME, CONFIG_PATH, Split.TRAIN, tokenizer=None)
+queries, qrels, corpus = loader.qrels() # questions, labels, and corpus
+
+# pretrained model for retrieving
 config_instance = DenseHyperParams(
     query_encoder_path="facebook/contriever",
     document_encoder_path="facebook/contriever",
@@ -22,7 +23,7 @@ config_instance = DenseHyperParams(
     show_progress_bar=True
 )
 retriever = Contriever(config_instance)
-similarity_measure = DotScore()
+similarity_measure = DotScore() # measure for documents similarity
 
 corpus_map = {doc.id(): doc for doc in corpus} # info for each passage
 queries_map = {query.id(): query for query in queries} # id and text of each question
@@ -56,9 +57,10 @@ for query_id, retrieved_docs in broad_results.items():
         else:
             negs.append(doc_entry)
 
-    negs.sort(key=lambda x: x["score"], reverse=True)
+    negs.sort(key=lambda x: x["score"], reverse=True) # hardest negative on top
     hard_negs = negs[:num_hard_negs]
     remaining_negs = negs[num_hard_negs:]
+
     if len(remaining_negs) >= num_negs:
         random_negs = sample(remaining_negs, num_negs)
     else:
@@ -86,6 +88,7 @@ for query_id, retrieved_docs in broad_results.items():
     }
     dpr_entries.append(dpr_entry)
 
+# save entries for ADORE training
 # with open("   .jsonl", "w", encoding="utf-8") as f:
 #     for entry in dpr_entries:
 #         f.write(json.dumps(entry) + "\n")
@@ -98,4 +101,5 @@ for query_id, retrieved_docs in broad_results.items():
 # with open('all_augmented_contexts.pkl', 'wb') as f:
 #     pickle.dump(all_augmented_contexts, f)
 
+# run the RAG with the hard negatives added
 # LlamaEngine.run_rag(all_augmented_contexts)

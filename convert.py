@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
-input_file = Path("D:/NLP_proj_LLM_w-RAG/data/train_dpr_ready.jsonl")
-preprocess_dir = Path("D:/NLP_proj_LLM_w-RAG/data/preprocessed")
+DPR_ENTRIES_PATH = "D:/NLP_proj_LLM_w-RAG/data/train_dpr_ready.jsonl"
+PREPROCESSED_PATH = "D:/NLP_proj_LLM_w-RAG/data/train_dpr_ready.jsonl"
+input_file = Path(DPR_ENTRIES_PATH)
+preprocess_dir = Path(PREPROCESSED_PATH)
 preprocess_dir.mkdir(exist_ok=True)
 
 with open(input_file, "r", encoding="utf-8") as f, \
