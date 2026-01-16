@@ -102,4 +102,4 @@ for query_id, retrieved_docs in broad_results.items():
 #     pickle.dump(all_augmented_contexts, f)
 
 # run the RAG with the hard negatives added
-# LlamaEngine.run_rag(all_augmented_contexts)
+LlamaEngine.run_rag(all_augmented_contexts)
