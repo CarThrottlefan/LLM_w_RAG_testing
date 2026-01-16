@@ -3,11 +3,10 @@ import json
 import pandas as pd
 import torch
 import transformers
-from dexter.config.constants import Split
-from dexter.data.loaders.RetrieverDataset import RetrieverDataset
-from collections import defaultdict
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from dexter.config.constants import Split
+from dexter.data.loaders.RetrieverDataset import RetrieverDataset
 
 class LlamaEngine:
     
@@ -86,8 +85,9 @@ class LlamaEngine:
         )
         return outputs[0]["generated_text"]
 
-if __name__=="__main__":
-    
+
+if __name__ == "__main__":
+
     # Create an instance of the Llama model engine
     llm_instance = LlamaEngine(
         data="",
@@ -95,109 +95,134 @@ if __name__=="__main__":
         temperature=0.3,
         top_n=1
     )
-    
-    # Dictionary to store questions and generated answers for later analysis
-    question_df = {"questions": [], "answers": []}
+
+    # Load retrieval results from JSON file generated using contriver
+    with open("./retrieval_results.json") as f:
+        evidence = json.load(f)
 
     # Load the WikiMultiHopQA dataset for evaluation
     # This dataset contains multi-hop questions requiring reasoning across multiple documents
-    loader = RetrieverDataset("wikimultihopqa", "wiki-musiqueqa-corpus", "config.ini", Split.DEV)
+    loader = RetrieverDataset(
+        "wikimultihopqa",
+        "wiki-musiqueqa-corpus",
+        "config.ini",
+        Split.DEV
+    )
+
     queries, qrels, corpus = loader.qrels()
     raw_data = loader.base_dataset.raw_data
-    
-    # System prompt: instructs the model on how to format its answer
+
+     # System prompt: instructs the model on how to format its answer
     system_prompt = (
         "Given the question and context, output the final answer using "
         "information in the context. Give the answer in the form of "
         "[Final Answer]: <answer>\n"
     )
-    
-    # Counters for evaluation metrics
-    matches = 0 # Correct answers
-    mismatches = 0 # Incorrect or refused answers
 
-    # Group all evidence passages by question ID
-    # This creates "oracle contexts" - the perfect set of passages for each question
-    grouped_data = defaultdict(lambda: {"q_text": "", "answer": "", "evidences": []})
-    ids = []
+    # -------------------------------
+    # NEW: top-k settings + EM storage
+    # -------------------------------
+    k_values = [1, 3, 5]
+    performance = []
 
-    for row in raw_data:
+    for k in k_values:
+
+        print(f"\n===== Running evaluation for top-k = {k} =====")
+
+        matches = 0
+        mismatches = 0
+        ids = []
+        question_df = {"questions": [], "answers": []}
+
+        counter=0
         
-        q_id = row.question.id()
-                
-        # Update the entry for this Question ID
-        grouped_data[q_id]["q_text"] = row.question.text()
-        grouped_data[q_id]["answer"] = row.answer.text() 
-        grouped_data[q_id]["evidences"].append(row.evidences.text())
+        for row in raw_data:
 
-    print(f"Processing {len(grouped_data)} unique questions...")
+            if row.question.id() in ids:
+                continue
+            ids.append(row.question.id())
 
-    # Process each unique question
-    for q_id, data in grouped_data.items():
-        q_text = data["q_text"]
-        gold_answer_obj = data["answer"]
-        gold_answer_text = gold_answer_obj # The ground truth answer
-        
-        # Combine all oracle evidence passages into a single context string    
-        all_oracle_evidences = data["evidences"]
-        evidence_text = " ".join(all_oracle_evidences)
-        
-        # Construct the user prompt with evidence and question
-        user_prompt = (
-                f"Evidence: {evidence_text}\n\n"
-                f"Based on the evidence above, answer the Question: {q_text}"
+            # select top-k retrieved documents
+            top_k_docs = list(evidence[row.question.id()])[:k]
+
+            top_k_context = " ".join(
+                corpus[int(doc_id)].text() for doc_id in top_k_docs
             )
-                
-        # Generate answer using the Llama model
-        chain_answer = llm_instance.get_llama_completion(
+
+            # We construct a clean prompt with ONLY the Context (Evidence) and Question.
+            user_prompt = (
+                f"Evidence: {top_k_context}\n\n"
+                f"Based on the evidence above, answer the Question: {row.question.text()}"
+            )
+
+            chain_answer = llm_instance.get_llama_completion(
                 system_prompt,
                 user_prompt
             )
-        
-        # Convert to lowercase for case-insensitive comparison
-        clean_chain_answer = chain_answer.lower()
-        
-        # Check if model refused to answer or expressed uncertainty
-        if "not possible" in clean_chain_answer or "unknown" in clean_chain_answer:
-            mismatches += 1
 
-        else:
-            # Extract the final answer from the model's response
-            if "[Final Answer]:" in chain_answer:
-                # Best case: Model followed the instructed format
-                pred_answer = chain_answer.split("[Final Answer]:")[-1]
-            else:
-                # Fallback: Model didn't use the tag, check entire response
-                pred_answer = chain_answer
+            # Lowercase once for easier checking
+            chain_answer_lower = chain_answer.lower()
 
-            # Compare predicted answer with ground truth
-            pred_answer = pred_answer.strip()
-
-            # Use substring matching: correct if gold answer appears in prediction
-            if gold_answer_text.lower() in pred_answer.lower():
-                matches += 1
-            else:
+            # 1. Check for refusal/uncertainty first
+            if "not possible" in chain_answer_lower or "unknown" in chain_answer_lower:
                 mismatches += 1
-        
-        # Store the question and answer for qualitative analysis
-        question_df["answers"].append(chain_answer)
-        question_df["questions"].append(q_text)
 
-    # Calculate Exact Match (EM) score
-    em_score = matches / (matches + mismatches)
-    
-    # Prepare performance metrics for saving
-    performance=[]
-    performance.append({
+            else:
+                # 2. Attempt to extract the answer using the tag
+                if "[Final Answer]:" in chain_answer:
+                    # Best case: Model followed instructions
+                    pred_answer = chain_answer.split("[Final Answer]:")[-1]
+                else:
+                    # Fallback case: Model forgot the tag, so we check the whole text
+                    pred_answer = chain_answer
+
+                # 3. Compare with Ground Truth
+                # We strip whitespace to avoid issues with trailing newlines
+                pred_answer = pred_answer.strip()
+                gold_answer = row.answer.text().strip()
+
+                # Check if the correct answer is contained within the prediction
+                if gold_answer.lower() in pred_answer.lower():
+                    matches += 1
+                else:
+                    mismatches += 1
+
+            question_df["questions"].append(row.question.text())
+            question_df["answers"].append(chain_answer)
+
+            counter+=1
+            if counter>=1200:
+              break
+
+        # compute EM
+        em_score = matches / (matches + mismatches)
+
+        # report EM
+        print(f"Top-{k} Exact Match (EM): {em_score:.4f}")
+
+        # store EM
+        performance.append({
+            "k": k,
             "exact_match": em_score,
             "matches": matches,
             "mismatches": mismatches
         })
-    
-    # Save performance metrics to a TSV file
-    perf_df = pd.DataFrame(performance)
-    perf_df.to_csv("llama_rag_em_oracle_results.tsv", sep="\t", index=False)
 
-    # Save all questions and generated answers for detailed analysis
-    final_questions = pd.DataFrame(question_df)
-    final_questions.to_csv("llama_rag_oracle_results_questions.tsv", sep="\t", index=False)
+        # store generated answers
+        final_questions = pd.DataFrame(question_df)
+        final_questions.to_csv(
+            f"llama_rag_top{k}_results.tsv",
+            sep="\t",
+            index=False
+        )
+
+    # -------------------------------
+    # Save EM summary across k
+    # -------------------------------
+    perf_df = pd.DataFrame(performance)
+    perf_df.to_csv("llama_rag_em_results.tsv", sep="\t", index=False)
+
+    print("\n===== Final EM Summary =====")
+    print(perf_df)
+
+
