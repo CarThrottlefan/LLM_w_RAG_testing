@@ -86,7 +86,6 @@ if __name__ == "__main__":
     k_relevant = 3 
     noise_levels = [1, 2, 3]
     
-    # Handle corpus - it's a list, not a dict
     # Create a mapping of indices for random sampling
     if isinstance(corpus, dict):
         all_corpus_ids = list(corpus.keys())
@@ -188,7 +187,7 @@ if __name__ == "__main__":
         total = matches + mismatches
         em_score = matches / total if total > 0 else 0
         
-        print(f"\n📊 Results for noise={n_noise}:")
+        print(f"\nResults for noise={n_noise}:")
         print(f"   Exact Match: {em_score:.4f}")
         print(f"   Correct: {matches}/{total}")
         
@@ -200,13 +199,10 @@ if __name__ == "__main__":
         })
         
         pd.DataFrame(results_log).to_csv(f"rag_noise_{n_noise}_results.tsv", sep="\t", index=False)
-        print(f"   ✓ Saved: rag_noise_{n_noise}_results.tsv")
-
-    print("\n" + "="*60)
-    print("EXPERIMENT COMPLETE!")
+        print(f"Saved: rag_noise_{n_noise}_results.tsv")
     
     summary_df = pd.DataFrame(performance_summary)
     summary_df.to_csv("noise_impact_summary.tsv", sep="\t", index=False)
     
-    print("\n📈 Summary of Results:")
+    print("\nSummary of Results:")
     print(summary_df.to_string(index=False))
